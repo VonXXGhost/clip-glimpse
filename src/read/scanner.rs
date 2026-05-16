@@ -219,6 +219,9 @@ impl Scanner {
                             log_debug!("CLIP", "Copied message to clipboard ({} bytes)", message.len());
                         }
 
+                        // System notification
+                        crate::notify::show("ClipGlimpse", "Message received and copied to clipboard");
+
                         let mut h = history.lock().unwrap();
                         h.add(message);
                         drop(h);

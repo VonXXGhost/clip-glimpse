@@ -17,7 +17,6 @@ pub struct ReadApp {
     history: Arc<Mutex<History>>,
     scan_state: Arc<Mutex<ScanState>>,
     stats: Arc<Mutex<ScanStats>>,
-    hotkey_pressed: Arc<AtomicBool>,
     region: CaptureRegion,
     config: Config,
     selected_tab: Tab,
@@ -31,7 +30,6 @@ impl ReadApp {
         history: Arc<Mutex<History>>,
         scan_state: Arc<Mutex<ScanState>>,
         stats: Arc<Mutex<ScanStats>>,
-        hotkey_pressed: Arc<AtomicBool>,
         region: CaptureRegion,
         config: Config,
         needs_reselect: Arc<AtomicBool>,
@@ -40,7 +38,6 @@ impl ReadApp {
             history,
             scan_state,
             stats,
-            hotkey_pressed,
             region,
             config,
             selected_tab: Tab::Scanner,
@@ -62,12 +59,6 @@ impl ReadApp {
 impl eframe::App for ReadApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let self_ = &mut *self;
-
-        if self_.hotkey_pressed.swap(false, Ordering::SeqCst) {
-            log_debug!("READ", "Hotkey toggled scanning");
-            self_.toggle_scanning();
-            ctx.request_repaint();
-        }
 
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -123,7 +114,7 @@ impl ReadApp {
 
         ui.add_space(16.0);
 
-        ui.label("Hotkey: Ctrl+Shift+V");
+        ui.label(format!("Hotkey: {}", crate::hotkey::normalize_hotkey(&self.config.hotkey)));
         if self.config.hotkey_enabled {
             ui.label("Hotkey polling is enabled");
         }

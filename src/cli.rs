@@ -14,13 +14,14 @@ USAGE:\n\
 CONFIG:\n\
     config.toml in CWD controls:\n\
       - scan_interval_ms   : Scanner polling interval (default: 200)\n\
-      - hotkey_enabled     : Enable Ctrl+Shift+V hotkey toggle (default: true)\n\
-      - hotkey_modifiers   : Bitmask (1=ALT, 2=CTRL, 4=SHIFT)\n\
-      - hotkey_vk          : Virtual key code (default: 0x56 = V)\n\
+      - hotkey_enabled     : Enable hotkey toggle (default: true)\n\
+      - hotkey             : Hotkey string, e.g. \"Ctrl+Shift+V\" (default: \"Ctrl+Shift+V\")\n\
       - log_enabled        : Write clip_glimpse.log (default: true)\n\
+      - generate_preset_index : Default QR preset index in generate mode (default: 1)\n\
+      - generate_interval_ms  : Default cycle interval in generate mode (default: 500) — one of 200,300,500,800,1000\n\
 \n\
 HOTKEYS:\n\
-    Ctrl+Shift+V   — Toggle scan on/off (configurable in config.toml)\n\
+    configurable via hotkey string in config.toml (default: Ctrl+Shift+V)\n\
 \n\
 PROTOCOL:\n\
     Binary header 'CG' + SOS/DATA/EOS chunks with CRC32 verification.\n\

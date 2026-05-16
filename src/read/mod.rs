@@ -40,8 +40,9 @@ pub struct Config {
     pub scan_interval_ms: u64,
     pub hotkey_enabled: bool,
     pub log_enabled: bool,
-    pub hotkey_modifiers: u32,
-    pub hotkey_vk: u32,
+    pub hotkey: String,
+    pub generate_preset_index: usize,
+    pub generate_interval_ms: u64,
 }
 
 impl Default for Config {
@@ -51,8 +52,9 @@ impl Default for Config {
             scan_interval_ms: 200,
             hotkey_enabled: true,
             log_enabled: true,
-            hotkey_modifiers: crate::hotkey::HOTKEY_CTRL | crate::hotkey::HOTKEY_SHIFT,
-            hotkey_vk: crate::hotkey::VK_V,
+            hotkey: "Ctrl+Shift+V".into(),
+            generate_preset_index: 1,
+            generate_interval_ms: 500,
         }
     }
 }
@@ -120,7 +122,6 @@ pub fn run() -> anyhow::Result<()> {
     loop {
         let history = Arc::new(Mutex::new(History::new()));
         let scan_state = Arc::new(Mutex::new(ScanState::Idle));
-        let hotkey_pressed = Arc::new(AtomicBool::new(false));
 
         let mut scanner = Scanner::new(
             scan_region,
@@ -133,19 +134,34 @@ pub fn run() -> anyhow::Result<()> {
         scanner.start();
 
         {
-            let hotkey_pressed = hotkey_pressed.clone();
-            let hotkey_modifiers = config.hotkey_modifiers;
-            let hotkey_vk = config.hotkey_vk;
+            let hotkey_scan_state = scan_state.clone();
+            let hotkey_string = config.hotkey.clone();
             let hotkey_enabled = config.hotkey_enabled;
+            let parsed = crate::hotkey::parse_hotkey(&hotkey_string);
             std::thread::Builder::new()
                 .name("hotkey-poller".into())
                 .spawn(move || {
+                    let (hotkey_modifiers, hotkey_vk) = match parsed {
+                        Some(p) => p,
+                        None => {
+                            log_debug!("HOTKEY", "Invalid hotkey string '{}', hotkey disabled", hotkey_string);
+                            return;
+                        }
+                    };
                     let mut was_pressed = false;
                     loop {
-                        let pressed = hotkey_enabled
-                            && crate::hotkey::is_hotkey_pressed(hotkey_modifiers, hotkey_vk);
+                        if !hotkey_enabled {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            continue;
+                        }
+                        let pressed = crate::hotkey::is_hotkey_pressed(hotkey_modifiers, hotkey_vk);
                         if pressed && !was_pressed {
-                            hotkey_pressed.store(true, Ordering::SeqCst);
+                            let mut state = hotkey_scan_state.lock().unwrap();
+                            *state = match *state {
+                                ScanState::Idle => ScanState::Scanning,
+                                ScanState::Scanning => ScanState::Idle,
+                            };
+                            log_debug!("HOTKEY", "Toggled scanning via hotkey (now {:?})", *state);
                         }
                         was_pressed = pressed;
                         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -165,7 +181,6 @@ pub fn run() -> anyhow::Result<()> {
             history,
             scan_state,
             stats,
-            hotkey_pressed,
             scan_region,
             config.clone(),
             needs_reselect.clone(),

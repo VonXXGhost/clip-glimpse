@@ -57,12 +57,21 @@ pub struct GenerateApp {
     cycle_count: u64,
 }
 
-impl Default for GenerateApp {
-    fn default() -> Self {
+impl GenerateApp {
+    pub fn with_config(config: &crate::read::Config) -> Self {
+        let interval_index = INTERVALS_MS.iter()
+            .position(|&ms| ms == config.generate_interval_ms)
+            .unwrap_or_else(|| {
+                INTERVALS_MS.iter()
+                    .enumerate()
+                    .min_by_key(|&(_, &ms)| (ms as i64 - config.generate_interval_ms as i64).abs())
+                    .map(|(i, _)| i)
+                    .unwrap_or(2)
+            });
         Self {
             input_text: String::new(),
-            preset_index: 1,
-            interval_index: 2,
+            preset_index: config.generate_preset_index.min(PRESETS.len().saturating_sub(1)),
+            interval_index,
             is_running: false,
             chunks: Vec::new(),
             current_index: 0,

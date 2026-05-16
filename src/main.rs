@@ -11,6 +11,7 @@ mod generate;
 mod read;
 mod cli;
 mod clipboard;
+mod notify;
 
 use clap::Parser;
 

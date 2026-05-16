@@ -1,0 +1,46 @@
+# ClipGlimpse 配置文件
+# 放置于程序工作目录，文件名为 config.toml
+
+# === 扫描区域（可选）===
+# 首次运行 Read 模式时通过图形界面选择，自动生成此项。
+# 若删除此项，下次启动 Read 会重新弹出区域选择窗口。
+# [region]
+# x = 0
+# y = 0
+# width = 400
+# height = 300
+
+# === 扫描间隔（毫秒，默认 200）===
+# 每次屏幕截图之间的等待时间。值越小扫描越快，但 CPU 占用更高。
+scan_interval_ms = 100
+
+# === 热键开关（默认 true）===
+# 是否启用 Ctrl+Shift+V 切换扫描。
+hotkey_enabled = true
+
+# === 热键字符串（默认 "Ctrl+Shift+V"）===
+# 格式：修饰键+主键，不区分大小写
+# 修饰键：Ctrl、Alt、Shift
+# 主键：A-Z、0-9、Space、Enter、Tab、Escape、F1-F24、Backspace、Delete 等
+# 示例：
+#   "Ctrl+Shift+V"   — 默认
+#   "Alt+C"          — Alt + C
+#   "Ctrl+F5"        — Ctrl + F5
+#   "Ctrl+Shift+3"   — Ctrl + Shift + 3
+hotkey = "Ctrl+Shift+V"
+
+# === 日志开关（默认 true）===
+# 关闭后不再写入 clip_glimpse.log。
+log_enabled = true
+
+# === 生成模式预设索引（默认 1）===
+# 0 = Conservative V20-Q
+# 1 = Default V25-M（推荐）
+# 2 = Fast V30-M
+# 3 = Extreme V35-L
+generate_preset_index = 2
+
+# === 生成模式刷新间隔（毫秒，默认 500）===
+# 生成模式下 QR 码轮播切换的时间间隔。
+# 可选值：200、300、500、800、1000。其他值会自动就近匹配。
+generate_interval_ms = 200

@@ -31,12 +31,14 @@ pub fn run() -> anyhow::Result<()> {
         ..Default::default()
     };
 
+    let config = crate::read::Config::load();
+
     eframe::run_native(
         "ClipGlimpse - Generate",
         options,
         Box::new(|cc| {
             setup_fonts(&cc.egui_ctx);
-            Ok(Box::<ui::GenerateApp>::default())
+            Ok(Box::new(ui::GenerateApp::with_config(&config)))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
