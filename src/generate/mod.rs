@@ -24,15 +24,20 @@ fn setup_fonts(ctx: &egui::Context) {
 
 
 pub fn run() -> anyhow::Result<()> {
+    let config = crate::read::Config::load();
+    crate::logger::set_enabled(config.log_enabled);
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(egui::vec2(480.0, 720.0))
+        .with_resizable(false)
+        .with_icon(crate::icon::create_app_icon());
+    if let Some(pos) = config.generate_window_pos {
+        viewport = viewport.with_position(egui::pos2(pos.x as f32, pos.y as f32));
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size(egui::vec2(480.0, 720.0))
-            .with_resizable(false)
-            .with_icon(crate::icon::create_app_icon()),
+        viewport,
         ..Default::default()
     };
-
-    let config = crate::read::Config::load();
 
     eframe::run_native(
         "ClipGlimpse - Generate",

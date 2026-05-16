@@ -23,6 +23,8 @@ pub struct ReadApp {
     selected_index: Option<usize>,
     preview_text: String,
     needs_reselect: Arc<AtomicBool>,
+    last_pos_check: std::time::Instant,
+    last_saved_pos: Option<(i32, i32)>,
 }
 
 impl ReadApp {
@@ -44,6 +46,8 @@ impl ReadApp {
             selected_index: None,
             preview_text: String::new(),
             needs_reselect,
+            last_pos_check: std::time::Instant::now(),
+            last_saved_pos: None,
         }
     }
 
@@ -73,6 +77,22 @@ impl eframe::App for ReadApp {
                 Tab::History => self_.show_history_panel(ui, ctx),
             }
         });
+
+        if self_.last_pos_check.elapsed() >= std::time::Duration::from_secs(10) {
+            self_.last_pos_check = std::time::Instant::now();
+            if let Some(rect) = ctx.viewport(|vp| {
+                vp.input.raw.viewports.get(&vp.input.raw.viewport_id).and_then(|vi| vi.outer_rect)
+            }) {
+                let p = (rect.min.x as i32, rect.min.y as i32);
+                if self_.last_saved_pos != Some(p) {
+                    self_.last_saved_pos = Some(p);
+                    self_.config.read_window_pos = Some(crate::read::WindowPosition {
+                        x: p.0, y: p.1,
+                    });
+                    let _ = self_.config.save();
+                }
+            }
+        }
     }
 }
 

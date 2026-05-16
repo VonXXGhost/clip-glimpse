@@ -22,6 +22,12 @@ pub struct ScreenRegion {
     pub height: u32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct WindowPosition {
+    pub x: i32,
+    pub y: i32,
+}
+
 impl From<ScreenRegion> for CaptureRegion {
     fn from(s: ScreenRegion) -> Self {
         CaptureRegion::new(s.x, s.y, s.width, s.height)
@@ -44,6 +50,8 @@ pub struct Config {
     pub generate_preset_index: usize,
     pub generate_interval_ms: u64,
     pub default_mode: Option<String>,
+    pub generate_window_pos: Option<WindowPosition>,
+    pub read_window_pos: Option<WindowPosition>,
 }
 
 impl Default for Config {
@@ -57,6 +65,8 @@ impl Default for Config {
             generate_preset_index: 1,
             generate_interval_ms: 500,
             default_mode: None,
+            generate_window_pos: None,
+            read_window_pos: None,
         }
     }
 }
@@ -95,6 +105,17 @@ impl Config {
             doc.remove("region");
         }
 
+        // Window positions: only write if Some, never delete if None
+        // (each mode only manages its own position)
+        if let Some(pos) = &self.generate_window_pos {
+            doc["generate_window_pos"]["x"] = toml_edit::value(pos.x as i64);
+            doc["generate_window_pos"]["y"] = toml_edit::value(pos.y as i64);
+        }
+        if let Some(pos) = &self.read_window_pos {
+            doc["read_window_pos"]["x"] = toml_edit::value(pos.x as i64);
+            doc["read_window_pos"]["y"] = toml_edit::value(pos.y as i64);
+        }
+
         std::fs::write(path, doc.to_string())
             .context("Failed to write config.toml")?;
 
@@ -124,23 +145,22 @@ fn setup_fonts(ctx: &egui::Context) {
 }
 
 pub fn run() -> anyhow::Result<()> {
-    let mut config = Config::load();
-    crate::logger::set_enabled(config.log_enabled);
-
-    let mut scan_region = match config.region {
-        Some(r) => r.into(),
-        None => {
-            let region = region::select_region()
-                .ok_or_else(|| anyhow!("Region selection cancelled"))?;
-            config.region = Some(ScreenRegion::from(region));
-            config.save()?;
-            region
-        }
-    };
-
     let needs_reselect = Arc::new(AtomicBool::new(false));
 
     loop {
+        let mut config = Config::load();
+        crate::logger::set_enabled(config.log_enabled);
+
+        let mut scan_region = match config.region {
+            Some(r) => r.into(),
+            None => {
+                let region = region::select_region()
+                    .ok_or_else(|| anyhow!("Region selection cancelled"))?;
+                config.region = Some(ScreenRegion::from(region));
+                config.save()?;
+                region
+            }
+        };
         let history = Arc::new(Mutex::new(History::new()));
         let scan_state = Arc::new(Mutex::new(ScanState::Idle));
 
@@ -191,11 +211,15 @@ pub fn run() -> anyhow::Result<()> {
                 .context("Failed to start hotkey poller thread")?;
         }
 
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_inner_size(egui::vec2(520.0, 600.0))
+            .with_resizable(true)
+            .with_icon(crate::icon::create_app_icon());
+        if let Some(pos) = config.read_window_pos {
+            viewport = viewport.with_position(egui::pos2(pos.x as f32, pos.y as f32));
+        }
         let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size(egui::vec2(520.0, 600.0))
-                .with_resizable(true)
-                .with_icon(crate::icon::create_app_icon()),
+            viewport,
             ..Default::default()
         };
 

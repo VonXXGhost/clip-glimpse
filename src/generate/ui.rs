@@ -54,6 +54,9 @@ pub struct GenerateApp {
     qr_texture: Option<egui::TextureHandle>,
     status_message: String,
     cycle_count: u64,
+    config: crate::read::Config,
+    last_pos_check: std::time::Instant,
+    last_saved_pos: Option<(i32, i32)>,
 }
 
 impl GenerateApp {
@@ -78,6 +81,9 @@ impl GenerateApp {
             qr_texture: None,
             status_message: String::new(),
             cycle_count: 0,
+            config: config.clone(),
+            last_pos_check: std::time::Instant::now(),
+            last_saved_pos: None,
         }
     }
 }
@@ -307,6 +313,22 @@ impl eframe::App for GenerateApp {
                 self_.show_qr_preview(ctx);
             }
             ctx.request_repaint();
+        }
+
+        if self_.last_pos_check.elapsed() >= std::time::Duration::from_secs(10) {
+            self_.last_pos_check = std::time::Instant::now();
+            if let Some(rect) = ctx.viewport(|vp| {
+                vp.input.raw.viewports.get(&vp.input.raw.viewport_id).and_then(|vi| vi.outer_rect)
+            }) {
+                let p = (rect.min.x as i32, rect.min.y as i32);
+                if self_.last_saved_pos != Some(p) {
+                    self_.last_saved_pos = Some(p);
+                    self_.config.generate_window_pos = Some(crate::read::WindowPosition {
+                        x: p.0, y: p.1,
+                    });
+                    let _ = self_.config.save();
+                }
+            }
         }
     }
 }
