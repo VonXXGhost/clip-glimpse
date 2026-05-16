@@ -1,8 +1,18 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 static LOGGER: Mutex<Option<std::fs::File>> = Mutex::new(None);
+static LOG_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_enabled(enabled: bool) {
+    LOG_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub fn is_enabled() -> bool {
+    LOG_ENABLED.load(Ordering::SeqCst)
+}
 
 fn ensure_init() {
     let mut guard = LOGGER.lock().unwrap();
@@ -17,6 +27,9 @@ fn ensure_init() {
 }
 
 pub fn log_msg(tag: &str, msg: &str) {
+    if !LOG_ENABLED.load(Ordering::SeqCst) {
+        return;
+    }
     ensure_init();
     let now = chrono::Local::now();
     let line = format!("[{}] [{}] {}\n", now.format("%H:%M:%S%.3f"), tag, msg);

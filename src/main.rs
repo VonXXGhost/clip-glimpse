@@ -10,6 +10,7 @@ mod tray;
 mod generate;
 mod read;
 mod cli;
+mod clipboard;
 
 use clap::Parser;
 

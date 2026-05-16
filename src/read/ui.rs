@@ -136,7 +136,14 @@ impl ReadApp {
         let stats = self.stats.lock().unwrap().clone();
         ui.label(format!("Frames captured: {}", stats.frames_captured));
         ui.label(format!("Frames decoded:  {}", stats.frames_decoded));
-        ui.label(format!("Chunks received: {}", stats.chunks_received));
+        if stats.current_message_active && stats.current_total_chunks > 0 {
+            let data_total = stats.current_total_chunks.saturating_sub(2);
+            let show_total = if data_total > 0 { data_total } else { 1 };
+            let progress = stats.current_received_data_chunks.min(show_total);
+            ui.label(format!("Chunk progress: {}/{} data chunks", progress, show_total));
+        } else {
+            ui.label(format!("Chunks received: {}", stats.chunks_received));
+        }
         ui.label(format!("Messages completed: {}", stats.messages_completed));
         if let Some(ref t) = stats.last_message_time {
             ui.label(format!("Last message: {}", t));

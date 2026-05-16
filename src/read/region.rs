@@ -43,6 +43,25 @@ impl RegionSelector {
     }
 }
 
+impl RegionSelector {
+    fn confirm(&mut self, ctx: &egui::Context) {
+        if let Some(rect) = self.selected_rect() {
+            let region = self.region_from_rect(rect);
+            if let Some(tx) = self.result_tx.take() {
+                let _ = tx.send(Some(region));
+            }
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    fn cancel(&mut self, ctx: &egui::Context) {
+        if let Some(tx) = self.result_tx.take() {
+            let _ = tx.send(None);
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+}
+
 impl eframe::App for RegionSelector {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let self_ = &mut *self;
@@ -145,21 +164,12 @@ impl eframe::App for RegionSelector {
 
             ui.horizontal(|ui| {
                 if ui.button("Cancel").clicked() {
-                    if let Some(tx) = self_.result_tx.take() {
-                        let _ = tx.send(None);
-                    }
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    self_.cancel(ctx);
                 }
 
                 let region_ready = self_.selected_rect().is_some();
                 if ui.add_enabled(region_ready, egui::Button::new("OK")).clicked() {
-                    if let Some(rect) = self_.selected_rect() {
-                        let region = self_.region_from_rect(rect);
-                        if let Some(tx) = self_.result_tx.take() {
-                            let _ = tx.send(Some(region));
-                        }
-                    }
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    self_.confirm(ctx);
                 }
             });
 
@@ -169,6 +179,16 @@ impl eframe::App for RegionSelector {
                     "Selected region: ({}, {}) {}x{}",
                     r.x, r.y, r.width, r.height
                 ));
+            }
+
+            // Handle keyboard: Enter to confirm, Esc to cancel
+            let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+            let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
+            if enter_pressed && self_.selected_rect().is_some() {
+                self_.confirm(ctx);
+            } else if escape_pressed {
+                self_.cancel(ctx);
             }
         });
     }

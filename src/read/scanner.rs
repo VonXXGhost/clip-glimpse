@@ -19,6 +19,15 @@ pub struct ScanConfig {
     pub timeout_secs: u64,
 }
 
+impl ScanConfig {
+    pub fn new(interval_ms: u64) -> Self {
+        Self {
+            interval_ms,
+            timeout_secs: 30,
+        }
+    }
+}
+
 impl Default for ScanConfig {
     fn default() -> Self {
         Self {
@@ -35,6 +44,9 @@ pub struct ScanStats {
     pub chunks_received: u64,
     pub messages_completed: u64,
     pub last_message_time: Option<String>,
+    pub current_total_chunks: u16,
+    pub current_received_data_chunks: u16,
+    pub current_message_active: bool,
 }
 
 impl Default for ScanStats {
@@ -45,6 +57,9 @@ impl Default for ScanStats {
             chunks_received: 0,
             messages_completed: 0,
             last_message_time: None,
+            current_total_chunks: 0,
+            current_received_data_chunks: 0,
+            current_message_active: false,
         }
     }
 }
@@ -67,10 +82,11 @@ impl Scanner {
         region: CaptureRegion,
         history: Arc<Mutex<History>>,
         scan_state: Arc<Mutex<ScanState>>,
+        scan_interval_ms: u64,
     ) -> Self {
         Self {
             region,
-            config: ScanConfig::default(),
+            config: ScanConfig::new(scan_interval_ms),
             history,
             scan_state,
             stats: Arc::new(Mutex::new(ScanStats::default())),
@@ -172,6 +188,14 @@ impl Scanner {
 
                     if chunk.chunk_type == crate::protocol::TYPE_SOS {
                         sos_time = Some(Instant::now());
+                        let mut s = stats.lock().unwrap();
+                        s.current_total_chunks = chunk.total;
+                        s.current_received_data_chunks = 0;
+                        s.current_message_active = true;
+                    } else if chunk.chunk_type == crate::protocol::TYPE_DATA {
+                        let mut s = stats.lock().unwrap();
+                        s.current_received_data_chunks =
+                            (s.current_received_data_chunks + 1).min(s.current_total_chunks);
                     }
 
                     if let Some(start) = sos_time {
@@ -179,12 +203,21 @@ impl Scanner {
                             log_debug!("SCAN", "SOS timeout, resetting assembler");
                             assembler.reset();
                             sos_time = None;
+                            let mut s = stats.lock().unwrap();
+                            s.current_message_active = false;
                             continue;
                         }
                     }
 
                     if let Some(message) = assembler.feed(&chunk) {
                         log_debug!("SCAN", "Message completed! len={}", message.len());
+
+                        // Auto-copy to clipboard
+                        if let Err(e) = crate::clipboard::set_text(&message) {
+                            log_debug!("CLIP", "Failed to set clipboard: {}", e);
+                        } else {
+                            log_debug!("CLIP", "Copied message to clipboard ({} bytes)", message.len());
+                        }
 
                         let mut h = history.lock().unwrap();
                         h.add(message);
@@ -197,6 +230,7 @@ impl Scanner {
                         s.last_message_time = Some(
                             chrono::Local::now().format("%H:%M:%S").to_string()
                         );
+                        s.current_message_active = false;
                         drop(s);
 
                         // Auto-stop scanning after a complete message is received

@@ -2,7 +2,30 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "clip_glimpse")]
-#[command(about = "Transfer text across air-gapped cloud desktops via QR codes", long_about = None)]
+#[command(about = "Transfer text across air-gapped cloud desktops via QR codes")]
+#[command(
+    long_about = "ClipGlimpse transfers clipboard text between air-gapped cloud desktops \
+using QR codes displayed on screen and captured via screen capture.\n\
+\n\
+USAGE:\n\
+    clip_glimpse generate    — Open GUI to type/paste text, encode as QR, cycle-display\n\
+    clip_glimpse read        — Open GUI to scan QR region, decode & reassemble messages\n\
+\n\
+CONFIG:\n\
+    config.toml in CWD controls:\n\
+      - scan_interval_ms   : Scanner polling interval (default: 200)\n\
+      - hotkey_enabled     : Enable Ctrl+Shift+V hotkey toggle (default: true)\n\
+      - hotkey_modifiers   : Bitmask (1=ALT, 2=CTRL, 4=SHIFT)\n\
+      - hotkey_vk          : Virtual key code (default: 0x56 = V)\n\
+      - log_enabled        : Write clip_glimpse.log (default: true)\n\
+\n\
+HOTKEYS:\n\
+    Ctrl+Shift+V   — Toggle scan on/off (configurable in config.toml)\n\
+\n\
+PROTOCOL:\n\
+    Binary header 'CG' + SOS/DATA/EOS chunks with CRC32 verification.\n\
+    Max 100 chunks per message."
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

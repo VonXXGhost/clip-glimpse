@@ -28,6 +28,24 @@ pub fn is_key_down(virtual_key_code: u32) -> bool {
     unsafe { GetAsyncKeyState(virtual_key_code as i32) < 0 }
 }
 
+pub const HOTKEY_ALT: u32 = 1;
+pub const HOTKEY_CTRL: u32 = 2;
+pub const HOTKEY_SHIFT: u32 = 4;
+
+pub fn is_modifier_down(modifier: u32) -> bool {
+    if modifier & HOTKEY_ALT != 0 && !is_key_down(VK_ALT) { return false; }
+    if modifier & HOTKEY_CTRL != 0 && !is_key_down(VK_CONTROL) { return false; }
+    if modifier & HOTKEY_SHIFT != 0 && !is_key_down(VK_SHIFT) { return false; }
+    true
+}
+
+pub fn is_hotkey_pressed(modifiers: u32, vk: u32) -> bool {
+    if !is_modifier_down(modifiers) {
+        return false;
+    }
+    is_key_down(vk)
+}
+
 pub fn is_ctrl_shift_v_pressed() -> bool {
     is_key_down(VK_CONTROL) && is_key_down(VK_SHIFT) && is_key_down(VK_V)
 }
