@@ -1,6 +1,6 @@
 [package]
 name = "clip_glimpse"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Transfer text across air-gapped cloud desktops via QR codes"
 license = "MIT"
