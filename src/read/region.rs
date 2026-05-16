@@ -156,8 +156,15 @@ impl eframe::App for RegionSelector {
                 }
             }
 
-            if response.drag_stopped() {
+            if response.drag_stopped() && self_.is_dragging {
                 self_.is_dragging = false;
+                if let Some(rect) = self_.selected_rect() {
+                    if rect.width() > 5.0 && rect.height() > 5.0 {
+                        log_debug!("REGION", "Auto-confirmed region on mouse release");
+                        self_.confirm(ctx);
+                        return;
+                    }
+                }
             }
 
             ui.add_space(12.0);
@@ -207,7 +214,8 @@ pub fn select_region() -> Option<CaptureRegion> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_fullscreen(true)
-            .with_title("Select QR Scan Region"),
+            .with_title("Select QR Scan Region")
+            .with_icon(crate::icon::create_app_icon()),
         ..Default::default()
     };
 

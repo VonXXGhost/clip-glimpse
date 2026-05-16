@@ -23,15 +23,14 @@ hotkey_enabled = true
 # 修饰键：Ctrl、Alt、Shift
 # 主键：A-Z、0-9、Space、Enter、Tab、Escape、F1-F24、Backspace、Delete 等
 # 示例：
-#   "Ctrl+Shift+V"   — 默认
 #   "Alt+C"          — Alt + C
 #   "Ctrl+F5"        — Ctrl + F5
 #   "Ctrl+Shift+3"   — Ctrl + Shift + 3
-hotkey = "Ctrl+Shift+V"
+hotkey = "Shift+Alt+C"
 
 # === 日志开关（默认 true）===
 # 关闭后不再写入 clip_glimpse.log。
-log_enabled = true
+log_enabled = false
 
 # === 生成模式预设索引（默认 1）===
 # 0 = Conservative V20-Q

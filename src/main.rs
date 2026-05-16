@@ -12,6 +12,7 @@ mod read;
 mod cli;
 mod clipboard;
 mod notify;
+mod icon;
 
 use clap::Parser;
 

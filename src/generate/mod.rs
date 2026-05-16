@@ -27,7 +27,8 @@ pub fn run() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(egui::vec2(480.0, 720.0))
-            .with_resizable(false),
+            .with_resizable(false)
+            .with_icon(crate::icon::create_app_icon()),
         ..Default::default()
     };
 
