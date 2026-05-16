@@ -27,14 +27,13 @@ static PRESETS: &[Preset] = &[
 const INTERVALS_MS: &[u64] = &[200, 300, 500, 800, 1000];
 
 struct DisplayChunk {
-    data: Vec<u8>,
     qr_image: Option<image::RgbImage>,
 }
 
 impl DisplayChunk {
     fn new(data: Vec<u8>, params: &QrGenParams) -> Self {
         let qr_image = qr_gen::generate_qr(&data, params);
-        Self { data, qr_image }
+        Self { qr_image }
     }
 
     fn texture(&self, ctx: &egui::Context, label: &str) -> Option<egui::TextureHandle> {

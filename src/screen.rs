@@ -19,6 +19,7 @@ impl CaptureRegion {
         Self { x, y, width, height }
     }
 
+    #[allow(dead_code)]
     pub fn contains(&self, x: i32, y: i32) -> bool {
         x >= self.x
             && x < self.x + self.width as i32

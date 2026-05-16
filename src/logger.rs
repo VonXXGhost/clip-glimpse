@@ -10,6 +10,7 @@ pub fn set_enabled(enabled: bool) {
     LOG_ENABLED.store(enabled, Ordering::SeqCst);
 }
 
+#[allow(dead_code)]
 pub fn is_enabled() -> bool {
     LOG_ENABLED.load(Ordering::SeqCst)
 }

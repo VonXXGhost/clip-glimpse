@@ -3,10 +3,12 @@ use tray_icon::{
     menu::{Menu, MenuItem},
 };
 
+#[allow(dead_code)]
 pub struct AppTray {
     pub tray: TrayIcon,
 }
 
+#[allow(dead_code)]
 impl AppTray {
     pub fn new() -> anyhow::Result<Self> {
         let menu = Menu::new();

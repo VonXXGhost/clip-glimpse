@@ -53,10 +53,12 @@ impl History {
         &self.entries
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -65,12 +67,14 @@ impl History {
         self.entries.clear();
     }
 
+    #[allow(dead_code)]
     pub fn remove(&mut self, index: usize) {
         if index < self.entries.len() {
             self.entries.remove(index);
         }
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, index: usize) -> Option<&HistoryEntry> {
         self.entries.get(index)
     }
@@ -118,5 +122,24 @@ mod tests {
         let entry = HistoryEntry::new("a".repeat(100));
         assert_eq!(entry.preview(10).len(), 13);
         assert_eq!(entry.preview(200).len(), 100);
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut history = History::with_capacity(5);
+        history.add("first".to_string());
+        history.add("second".to_string());
+        history.add("third".to_string());
+        assert_eq!(history.len(), 3);
+        history.remove(1);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history.get(1).unwrap().text, "first");
+    }
+
+    #[test]
+    fn test_get_out_of_bounds() {
+        let history = History::new();
+        assert!(history.get(0).is_none());
+        assert!(history.get(100).is_none());
     }
 }

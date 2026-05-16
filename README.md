@@ -1,179 +1,211 @@
 # ClipGlimpse
 
-通过二维码在隔离云桌面之间传输文本。
+> [中文版说明](README.cn.md)
 
-**问题**：EDS 云桌面阻止回向流量（云端 → 本地），但本地 → 云端正常。
-传统剪贴板/文件传输是单向的。ClipGlimpse 仅通过视觉通道桥接这一缺口。
+Transfer text across air-gapped cloud desktops via QR codes on screen.
 
-**方案**：在云端将文本编码为二维码，从本地屏幕扫描并重建文本——全离线、全合规。
+**Problem**: Cloud desktops block return traffic (cloud → local), but local → cloud works. Traditional clipboard/file transfers are unidirectional. ClipGlimpse bridges this gap using only the visual channel.
 
-## 架构
+**Solution**: Encode text as QR codes on the cloud side, capture and decode from the local screen — fully offline, fully compliant.
+
+## Architecture
 
 ```
 ┌──────────────────────┐         ┌──────────────────────┐
-│   云端 PC             │         │   本地 PC             │
-│                      │  屏幕   │                      │
-│  生成模式             │◄────────│  读取模式             │
-│  • 文本编码为二维码   │  远程   │  • 屏幕捕获           │
-│  • 循环显示           │  桌面   │  • 二维码解码         │
-│  • 可配置速度         │         │  • 文本重组           │
-└──────────────────────┘         └──────────────────────┘
+│   Cloud PC            │         │   Local PC            │
+│                       │  Screen │                       │
+│  Generate mode        │◄────────│  Read mode            │
+│  • Text → QR chunks   │  Remote │  • Screen capture     │
+│  • Cycle display      │  Desktop│  • QR decode          │
+│  • Configurable speed │         │  • Text reassembly    │
+└──────────────────────┘         │  • Auto-clipboard     │
+                                 │  • System notification│
+                                 │  • In-memory history  │
+                                 └──────────────────────┘
 ```
 
-## 快速开始
+## Quick Start
 
-### 生成模式（在云端 PC 上运行）
+### Generate mode (run on Cloud PC)
 
 ```bash
 clip_glimpse generate
 ```
 
-打开 GUI 窗口：
-1. 在输入区粘贴文本
-2. 选择预设和显示间隔
-3. 点击 **开始** 循环显示二维码
-4. 让本地设备的摄像头/屏幕捕获对准二维码区域
+A GUI window opens:
+1. Paste text into the input area
+2. Choose a preset and cycle interval
+3. Text changes auto-start cycling QR frames
+4. Point the local PC's screen capture at the QR area
 
-### 读取模式（在本地 PC 上运行）
+### Read mode (run on Local PC)
 
 ```bash
 clip_glimpse read
 ```
 
-1. **首次运行**：拖拽选择二维码显示的屏幕区域
-2. 按下 **Ctrl+Shift+V** 或点击 **开始扫描** 开始扫描
-3. 接收到的消息显示在 **历史记录** 标签页
-4. 选择一条消息，点击 **复制到剪贴板**
+1. **First run**: Drag to select the QR display region on screen
+2. Press **Ctrl+Shift+V** or click **Start Scan** to begin
+3. On message completion: auto-copies to clipboard, fires a toast notification, and auto-stops scanning
+4. Received messages appear in the **History** tab — select to preview, click **Copy to Clipboard**
 
-## 传输协议
+## Protocol
 
-每个二维码携带一个结构化的数据块：
+Each QR frame carries a structured binary chunk:
 
 ```
 ┌────────┬────────┬──────────┬─────────┬─────────┬──────────────────┐
 │  MAGIC │  TYPE  │ VERSION  │   SEQ   │  TOTAL  │    PAYLOAD       │
-│ 2字节  │ 1字节  │  1字节   │ 2字节   │ 2字节   │   (N 字节)       │
-│ "CG"   │ S/D/E  │   0x01   │ u16 BE  │ u16 BE  │   UTF-8 文本     │
+│  2 B   │  1 B   │   1 B    │  2 B    │  2 B    │   (N bytes)      │
+│  "CG"  │ S/D/E  │   0x01   │ u16 BE  │ u16 BE  │   UTF-8 text     │
 └────────┴────────┴──────────┴─────────┴─────────┴──────────────────┘
 ```
 
-- **SOS** (0x53)：消息起始，携带 CRC32
-- **D** (0x44)：数据块，包含文本片段
-- **EOS** (0x45)：消息结束，携带 CRC32
+| Type | Byte | Description |
+|------|------|-------------|
+| SOS  | `0x53` | Start of message, carries CRC32 of entire payload |
+| DATA | `0x44` | Data fragment (UTF-8 text segment) |
+| EOS  | `0x45` | End of message, carries CRC32 for verification |
 
-读取器根据 `(TYPE, SEQ, TOTAL)` 去重和排序，重组完整的消息。
+The reader deduplicates by `(TYPE, SEQ, TOTAL)`, reassembles in order, and verifies via CRC32 before delivery. Max 100 chunks per message.
 
-## 预设
+## Presets
 
-| 预设 | 版本 | 纠错 | 像素/模块 | 每块负载 | 窗口大小 |
-|------|------|------|-----------|----------|----------|
-| 保守 | V20 | Q | 3px | 419 B | 291×291 |
-| **默认** | **V25** | **M** | 3px | **771 B** | **351×351** |
-| 快速 | V30 | M | 2px | 1035 B | 274×274 |
-| 极限 | V35 | L | 2px | 1587 B | 314×314 |
+| Preset | Version | EC Level | Module Size | Payload/Chunk | Display Size |
+|--------|---------|----------|-------------|---------------|--------------|
+| Conservative V20-Q | V20 | Q | 3 px | 419 B | ~291×291 |
+| **Default V25-M** | **V25** | **M** | **3 px** | **771 B** | **~351×351** |
+| Fast V30-M | V30 | M | 2 px | 1035 B | ~274×274 |
+| Extreme V35-L | V35 | L | 2 px | 1587 B | ~314×314 |
 
-## 吞吐量
+The payload per chunk excludes the 8-byte protocol header.
 
-| 文本大小 | 默认 | 快速 | 极限 |
-|----------|------|------|------|
-| 1 KB | ~0.6s | ~0.3s | ~0.3s |
-| 10 KB | ~4.2s | ~3.0s | ~2.1s |
-| 100 KB | ~40s | ~30s | ~20s |
-| 1 MB | ~6分44秒 | ~5分2秒 | ~3分17秒 |
+## Throughput (estimate)
 
-## 配置
+| Text Size | Default V25-M | Fast V30-M | Extreme V35-L |
+|-----------|---------------|------------|---------------|
+| 1 KB | ~0.6 s | ~0.3 s | ~0.3 s |
+| 10 KB | ~4.2 s | ~3.0 s | ~2.1 s |
+| 100 KB | ~40 s | ~30 s | ~20 s |
+| 1 MB | ~6 min 44 s | ~5 min 2 s | ~3 min 17 s |
 
-配置保存在 `./config.toml`：
+Based on 200 ms scan interval. Actual performance varies with screen capture speed and QR code quality.
 
-```toml
-[region]
-x = 100
-y = 200
-width = 351
-height = 351
+## Configuration
 
-scan_interval_ms = 200
-hotkey_enabled = true
-```
+Config file is `config.toml` in the working directory. See [config.example.toml](config.example.toml) for all options.
 
-## 开发
+Key settings:
+- `scan_interval_ms` — Scanner polling interval (default: 200 ms)
+- `hotkey` — Hotkey string, e.g. `"Ctrl+Shift+V"` (case-insensitive)
+- `hotkey_enabled` — Enable hotkey toggle (default: true)
+- `log_enabled` — Write `clip_glimpse.log` (default: true)
+- `generate_preset_index` — Default QR preset (default: 1 = V25-M)
+- `generate_interval_ms` — Default cycle interval in generate mode (default: 500)
 
-### 环境要求
+## Features
 
-- Rust 1.75+（2021 edition）
-- Windows 10/11（使用屏幕捕获和 GDI 功能）
+- **Auto-detach**: First run spawns a child process with `--detached` flag then exits, so the shell prompt returns immediately
+- **Hotkey polling**: Toggle scan with configurable hotkey (default `Ctrl+Shift+V`), edge-triggered to avoid repeated toggles
+- **Auto-clipboard**: Complete messages are automatically written to the Windows clipboard via `SetClipboardData(CF_UNICODETEXT)`
+- **Toast notification**: Uses `Shell_NotifyIconW` to show a system balloon notification on message completion
+- **Auto-stop**: Scanning stops automatically after a complete message is received
+- **SOS timeout**: If no EOS arrives within 30 seconds, the assembler resets and waits for a new message
+- **Region reselection**: Click "Change Region" in the scanner panel to re-select the capture area without restarting
+- **History**: In-memory message history (max 100 entries), view and copy from the History tab
+- **Cycle display**: In generate mode, QR frames cycle at configurable intervals (200/300/500/800/1000 ms)
+- **CJK fonts**: Loads SimHei, SimSun, or Microsoft YaHei for Chinese text rendering
 
-### 编译
+## Development
+
+### Requirements
+
+- Rust 1.75+ (2021 edition)
+- Windows 10/11 (GDI-based screen capture and hotkey polling)
+- MSVC toolchain (`stable-x86_64-pc-windows-msvc`)
+
+### Build
 
 ```bash
 cargo build --release
 ```
 
-### 运行测试
+Or with explicit MSVC toolchain:
+
+```bash
+cargo +stable-x86_64-pc-windows-msvc build --release
+```
+
+### Test
 
 ```bash
 cargo test
 ```
 
-### 模块结构
+Or:
+
+```bash
+cargo +stable-x86_64-pc-windows-msvc test
+```
+
+### Module Structure
 
 ```
 src/
-├── main.rs              # 入口
-├── cli.rs               # 命令行参数解析
-├── protocol.rs          # 数据块编码/解码协议
-├── qr_gen.rs            # 二维码生成
-├── qr_read.rs           # 二维码解码
-├── screen.rs            # Windows GDI 屏幕捕获
-├── hotkey.rs            # 全局热键（轮询 + RegisterHotKey）
-├── history.rs           # 内存消息历史
-├── tray.rs              # 系统托盘集成
+├── main.rs              # Entry point, detach logic
+├── cli.rs               # CLI argument parsing (clap)
+├── protocol.rs          # Binary chunk encode/decode, CRC32, reassembly
+├── qr_gen.rs            # QR code image generation (qrcode crate)
+├── qr_read.rs           # QR code decode from pixels (rxing crate)
+├── screen.rs            # Windows GDI screen capture (BitBlt, GetDIBits)
+├── hotkey.rs            # Global hotkey parsing and polling (GetAsyncKeyState)
+├── clipboard.rs         # Win32 clipboard write (SetClipboardData)
+├── notify.rs            # Windows toast notification (Shell_NotifyIconW)
+├── history.rs           # In-memory message history (max 100)
+├── logger.rs            # File-based debug logging (clip_glimpse.log)
+├── icon.rs              # Programmatic 16×16 app icon
+├── tray.rs              # System tray icon (planned integration)
 ├── generate/
-│   ├── mod.rs           # 生成模式入口
-│   └── ui.rs            # 生成模式 UI (eframe)
+│   ├── mod.rs           # Generate mode entry point + font setup
+│   └── ui.rs            # Generate mode GUI (eframe/egui)
 └── read/
-    ├── mod.rs           # 读取模式入口 + 配置
-    ├── ui.rs            # 读取模式 UI (eframe)
-    ├── scanner.rs       # 屏幕捕获 → 二维码解码循环
-    └── region.rs        # 区域选择覆盖层
+    ├── mod.rs           # Read mode entry point + config + hotkey thread
+    ├── ui.rs            # Read mode GUI (eframe/egui)
+    ├── scanner.rs       # Background scanner thread: capture → decode → assemble → notify
+    └── region.rs        # Full-screen region selector overlay
 ```
 
-### 主要依赖
+### Key Dependencies
 
-| 用途 | 库 |
-|------|-----|
+| Purpose | Crate |
+|---------|-------|
 | GUI | `eframe` / `egui` |
-| 二维码生成 | `qrcode` |
-| 二维码解码 | `rxing` |
-| 屏幕捕获 | `windows` (GDI) |
-| 命令行 | `clap` |
-| 系统托盘 | `tray-icon` |
-| 图像处理 | `image` |
-| 序列化 | `serde` + `toml` |
+| QR encode | `qrcode` |
+| QR decode | `rxing` |
+| Screen capture | `windows` (GDI) |
+| CLI | `clap` |
+| Image | `image` |
+| Serialization | `serde` + `toml` |
+| Time | `chrono` |
 
-## 运行
+## Usage
 
-编译完成后，可执行文件位于：
+After build, the binary is at:
+
 ```
 target/release/clip_glimpse.exe
 ```
 
-**生成模式**（在云端 PC 上）：
+**Generate mode** (on Cloud PC):
 ```bash
 clip_glimpse generate
 ```
 
-**读取模式**（在本地 PC 上）：
+**Read mode** (on Local PC):
 ```bash
 clip_glimpse read
 ```
 
-也可以通过 MSVC 工具链指定运行：
-```bash
-cargo +stable-x86_64-pc-windows-msvc run --release -- generate
-cargo +stable-x86_64-pc-windows-msvc run --release -- read
-```
-
-## 许可证
+## License
 
 MIT

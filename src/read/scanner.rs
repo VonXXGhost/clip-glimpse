@@ -123,7 +123,20 @@ impl Scanner {
                 let mut last_scan = Instant::now();
                 let mut sos_time: Option<Instant> = None;
 
+                let mut received_data_seqs: Vec<bool> = Vec::new();
+
                 while running.load(Ordering::SeqCst) {
+                    // SOS timeout: check every iteration regardless of decode success
+                    if let Some(start) = sos_time {
+                        if start.elapsed() > Duration::from_secs(config.timeout_secs) {
+                            log_debug!("SCAN", "SOS timeout, resetting assembler");
+                            assembler.reset();
+                            sos_time = None;
+                            let mut s = stats.lock().unwrap();
+                            s.current_message_active = false;
+                        }
+                    }
+
                     let is_scanning = *scan_state.lock().unwrap() == ScanState::Scanning;
 
                     if !is_scanning {
@@ -188,24 +201,19 @@ impl Scanner {
 
                     if chunk.chunk_type == crate::protocol::TYPE_SOS {
                         sos_time = Some(Instant::now());
+                        let data_count = chunk.total.saturating_sub(2);
+                        received_data_seqs = vec![false; data_count as usize];
                         let mut s = stats.lock().unwrap();
                         s.current_total_chunks = chunk.total;
                         s.current_received_data_chunks = 0;
                         s.current_message_active = true;
                     } else if chunk.chunk_type == crate::protocol::TYPE_DATA {
-                        let mut s = stats.lock().unwrap();
-                        s.current_received_data_chunks =
-                            (s.current_received_data_chunks + 1).min(s.current_total_chunks);
-                    }
-
-                    if let Some(start) = sos_time {
-                        if start.elapsed() > Duration::from_secs(config.timeout_secs) {
-                            log_debug!("SCAN", "SOS timeout, resetting assembler");
-                            assembler.reset();
-                            sos_time = None;
+                        let data_idx = chunk.seq as usize - 1;
+                        if data_idx < received_data_seqs.len() && !received_data_seqs[data_idx] {
+                            received_data_seqs[data_idx] = true;
                             let mut s = stats.lock().unwrap();
-                            s.current_message_active = false;
-                            continue;
+                            s.current_received_data_chunks =
+                                (s.current_received_data_chunks + 1).min(s.current_total_chunks);
                         }
                     }
 

@@ -203,6 +203,7 @@ impl MessageAssembler {
         None
     }
 
+    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         self.started
     }
@@ -284,5 +285,80 @@ mod tests {
         assert_eq!(compute_crc32(b"hello"), 0x3610A686);
         assert_eq!(compute_crc32(b""), 0);
         assert_eq!(compute_crc32(b"abc"), 0x352441C2);
+    }
+
+    #[test]
+    fn test_estimate_chunks() {
+        assert_eq!(estimate_chunks(0, 100), 2);
+        assert_eq!(estimate_chunks(50, 100), 3);
+        assert_eq!(estimate_chunks(100, 100), 3);
+        assert_eq!(estimate_chunks(101, 100), 4);
+        assert_eq!(estimate_chunks(200, 100), 4);
+    }
+
+    #[test]
+    fn test_decode_too_short() {
+        assert!(Chunk::decode(b"CG\x53").is_none());
+    }
+
+    #[test]
+    fn test_decode_wrong_version() {
+        let chunk = Chunk::new(TYPE_DATA, 1, 2, b"test".to_vec());
+        let mut data = chunk.encode();
+        data[3] = 0xFF;
+        assert!(Chunk::decode(&data).is_none());
+    }
+
+    #[test]
+    fn test_decode_invalid_type() {
+        let mut data = vec![0x43, 0x47, 0x58, 0x01, 0x00, 0x01, 0x00, 0x02];
+        data.extend_from_slice(b"test");
+        assert!(Chunk::decode(&data).is_none());
+    }
+
+    #[test]
+    fn test_message_assembly_out_of_order() {
+        let text = "Hello out of order!";
+        let chunks = encode_message(text, 5);
+        let total = chunks.len();
+
+        let mut assembler = MessageAssembler::new();
+        assembler.feed(&chunks[0]);
+
+        for &i in &[3, 1, 4, 2] {
+            assembler.feed(&chunks[i]);
+        }
+
+        let result = assembler.feed(&chunks[total - 1]);
+        assert_eq!(result, Some(text.to_string()));
+    }
+
+    #[test]
+    fn test_message_assembly_duplicate_chunks() {
+        let text = "test_duplicate";
+        let chunks = encode_message(text, 100);
+
+        let mut assembler = MessageAssembler::new();
+        assembler.feed(&chunks[0]);
+        assembler.feed(&chunks[1]);
+        assembler.feed(&chunks[1]);
+        let result = assembler.feed(&chunks[2]);
+        assert_eq!(result, Some(text.to_string()));
+    }
+
+    #[test]
+    fn test_crc_mismatch_rejected() {
+        let text = "crc test";
+        let mut chunks = encode_message(text, 100);
+        let data = chunks.iter_mut().find(|c| c.chunk_type == TYPE_DATA).unwrap();
+        if !data.payload.is_empty() {
+            data.payload[0] ^= 0xFF;
+        }
+
+        let mut assembler = MessageAssembler::new();
+        for chunk in &chunks {
+            let result = assembler.feed(chunk);
+            assert!(result.is_none(), "Should NOT complete with wrong CRC");
+        }
     }
 }

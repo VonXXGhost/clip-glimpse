@@ -36,6 +36,7 @@ pub fn convert_bgra_to_gray(bgra: &[u8]) -> Vec<u8> {
     }).collect()
 }
 
+#[allow(dead_code)]
 pub fn convert_rgb_to_gray(rgb: &[u8]) -> Vec<u8> {
     rgb.chunks(3).map(|p| {
         let r = p[0] as f32;
@@ -69,5 +70,14 @@ mod tests {
         let bgra = vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255];
         let gray = convert_bgra_to_gray(&bgra);
         assert_eq!(gray.len(), 3);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_gray() {
+        let rgb = vec![0, 0, 0, 255, 255, 255];
+        let gray = convert_rgb_to_gray(&rgb);
+        assert_eq!(gray.len(), 2);
+        assert_eq!(gray[0], 0);
+        assert_eq!(gray[1], 255);
     }
 }

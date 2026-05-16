@@ -20,7 +20,7 @@ fn ensure_init() {
 pub fn show(title: &str, body: &str) {
     let title = title.to_owned();
     let body = body.to_owned();
-    std::thread::Builder::new()
+    let _ = std::thread::Builder::new()
         .name("notify".into())
         .spawn(move || {
             ensure_init();
@@ -57,16 +57,18 @@ pub fn show(title: &str, body: &str) {
             nid.guidItem = NOTIFY_GUID;
             nid.hIcon = icon;
 
-            let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
-            let title_len = title_wide.len().min(64);
+            let title_wide: Vec<u16> = title.encode_utf16().collect();
+            let title_len = title_wide.len().min(63);
             unsafe {
                 std::ptr::copy_nonoverlapping(title_wide.as_ptr(), nid.szInfoTitle.as_mut_ptr(), title_len);
+                nid.szInfoTitle.as_mut_ptr().add(title_len).write(0);
             }
 
-            let body_wide: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
-            let body_len = body_wide.len().min(256);
+            let body_wide: Vec<u16> = body.encode_utf16().collect();
+            let body_len = body_wide.len().min(255);
             unsafe {
                 std::ptr::copy_nonoverlapping(body_wide.as_ptr(), nid.szInfo.as_mut_ptr(), body_len);
+                nid.szInfo.as_mut_ptr().add(body_len).write(0);
             }
 
             nid.dwInfoFlags = NIIF_INFO;
