@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 #[macro_use]
 mod logger;
 mod protocol;
@@ -39,11 +41,27 @@ fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
-        cli::Command::Generate => {
+        Some(cli::Command::Generate) => {
             generate::run()?;
         }
-        cli::Command::Read => {
+        Some(cli::Command::Read) => {
             read::run()?;
+        }
+        None => {
+            let config = crate::read::Config::load();
+            match config.default_mode.as_deref() {
+                Some("generate") => generate::run()?,
+                Some("read") => read::run()?,
+                Some(other) => {
+                    eprintln!("Unknown default_mode '{other}' in config.toml. Use 'generate' or 'read'.");
+                    std::process::exit(1);
+                }
+                None => {
+                    eprintln!("No subcommand specified. Use 'clip_glimpse generate' or 'clip_glimpse read'.");
+                    eprintln!("Set 'default_mode' in config.toml to launch a mode automatically.");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 

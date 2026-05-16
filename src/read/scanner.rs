@@ -121,17 +121,16 @@ impl Scanner {
             .spawn(move || {
                 let mut assembler = MessageAssembler::new();
                 let mut last_scan = Instant::now();
-                let mut sos_time: Option<Instant> = None;
-
-                let mut received_data_seqs: Vec<bool> = Vec::new();
+                let mut last_chunk_time: Option<Instant> = None;
 
                 while running.load(Ordering::SeqCst) {
-                    // SOS timeout: check every iteration regardless of decode success
-                    if let Some(start) = sos_time {
-                        if start.elapsed() > Duration::from_secs(config.timeout_secs) {
-                            log_debug!("SCAN", "SOS timeout, resetting assembler");
+                    if let Some(time) = last_chunk_time {
+                        if assembler.is_active()
+                            && time.elapsed() > Duration::from_secs(config.timeout_secs)
+                        {
+                            log_debug!("SCAN", "Assembly timeout, resetting assembler");
                             assembler.reset();
-                            sos_time = None;
+                            last_chunk_time = None;
                             let mut s = stats.lock().unwrap();
                             s.current_message_active = false;
                         }
@@ -182,59 +181,39 @@ impl Scanner {
                     let chunk = match Chunk::decode(&decoded) {
                         Some(c) => c,
                         None => {
-                            log_debug!("SCAN", "Chunk::decode failed (bad magic/type/version), raw_len={}", decoded.len());
+                            log_debug!("SCAN", "Chunk::decode failed (bad magic/version), raw_len={}", decoded.len());
                             continue;
                         },
                     };
 
-                    let type_str = if chunk.chunk_type == crate::protocol::TYPE_SOS { "SOS" }
-                        else if chunk.chunk_type == crate::protocol::TYPE_DATA { "DATA" }
-                        else if chunk.chunk_type == crate::protocol::TYPE_EOS { "EOS" }
-                        else { "???" };
-                    log_debug!("SCAN", "Chunk {} seq={} total={} payload_len={}",
-                        type_str, chunk.seq, chunk.total, chunk.payload.len());
+                    log_debug!("SCAN", "Chunk seq={} total={} flags={:#04x} payload_len={}",
+                        chunk.seq, chunk.total, chunk.flags, chunk.payload.len());
+
+                    last_chunk_time = Some(Instant::now());
 
                     {
                         let mut s = stats.lock().unwrap();
                         s.chunks_received += 1;
-                    }
-
-                    if chunk.chunk_type == crate::protocol::TYPE_SOS {
-                        sos_time = Some(Instant::now());
-                        let data_count = chunk.total.saturating_sub(2);
-                        received_data_seqs = vec![false; data_count as usize];
-                        let mut s = stats.lock().unwrap();
                         s.current_total_chunks = chunk.total;
-                        s.current_received_data_chunks = 0;
                         s.current_message_active = true;
-                    } else if chunk.chunk_type == crate::protocol::TYPE_DATA {
-                        let data_idx = chunk.seq as usize - 1;
-                        if data_idx < received_data_seqs.len() && !received_data_seqs[data_idx] {
-                            received_data_seqs[data_idx] = true;
-                            let mut s = stats.lock().unwrap();
-                            s.current_received_data_chunks =
-                                (s.current_received_data_chunks + 1).min(s.current_total_chunks);
-                        }
                     }
 
                     if let Some(message) = assembler.feed(&chunk) {
                         log_debug!("SCAN", "Message completed! len={}", message.len());
 
-                        // Auto-copy to clipboard
                         if let Err(e) = crate::clipboard::set_text(&message) {
                             log_debug!("CLIP", "Failed to set clipboard: {}", e);
                         } else {
                             log_debug!("CLIP", "Copied message to clipboard ({} bytes)", message.len());
                         }
 
-                        // System notification
                         crate::notify::show("ClipGlimpse", "Message received and copied to clipboard");
 
                         let mut h = history.lock().unwrap();
                         h.add(message);
                         drop(h);
 
-                        sos_time = None;
+                        last_chunk_time = None;
 
                         let mut s = stats.lock().unwrap();
                         s.messages_completed += 1;
@@ -242,13 +221,19 @@ impl Scanner {
                             chrono::Local::now().format("%H:%M:%S").to_string()
                         );
                         s.current_message_active = false;
+                        s.current_received_data_chunks = 0;
+                        s.current_total_chunks = 0;
                         drop(s);
 
-                        // Auto-stop scanning after a complete message is received
                         *scan_state.lock().unwrap() = ScanState::Idle;
                         log_debug!("SCAN", "Scanning auto-stopped after message completion");
                     } else {
                         log_debug!("SCAN", "feed returned None (duplicate or incomplete)");
+                        {
+                            let mut s = stats.lock().unwrap();
+                            s.current_received_data_chunks = assembler.filled_count();
+                            s.current_message_active = assembler.is_active();
+                        }
                     }
                 }
             });

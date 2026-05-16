@@ -26,4 +26,9 @@ windows = { version = "0.58", features = [
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+toml_edit = "0.20"
 chrono = "0.4"
+lz4_flex = "0.11"
+
+[build-dependencies]
+winresource = "0.1"

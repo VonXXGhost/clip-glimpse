@@ -4,7 +4,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static LOGGER: Mutex<Option<std::fs::File>> = Mutex::new(None);
+#[cfg(not(test))]
 static LOG_ENABLED: AtomicBool = AtomicBool::new(true);
+#[cfg(test)]
+static LOG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_enabled(enabled: bool) {
     LOG_ENABLED.store(enabled, Ordering::SeqCst);

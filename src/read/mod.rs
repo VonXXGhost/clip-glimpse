@@ -43,6 +43,7 @@ pub struct Config {
     pub hotkey: String,
     pub generate_preset_index: usize,
     pub generate_interval_ms: u64,
+    pub default_mode: Option<String>,
 }
 
 impl Default for Config {
@@ -55,6 +56,7 @@ impl Default for Config {
             hotkey: "Ctrl+Shift+V".into(),
             generate_preset_index: 1,
             generate_interval_ms: 500,
+            default_mode: None,
         }
     }
 }
@@ -73,10 +75,29 @@ impl Config {
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize config")?;
-        std::fs::write("config.toml", content)
+        let path = Path::new("config.toml");
+
+        let mut doc: toml_edit::Document = if path.exists() {
+            std::fs::read_to_string(path)
+                .context("Failed to read config.toml")?
+                .parse()
+                .context("Failed to parse config.toml")?
+        } else {
+            toml_edit::Document::new()
+        };
+
+        if let Some(region) = &self.region {
+            doc["region"]["x"] = toml_edit::value(region.x as i64);
+            doc["region"]["y"] = toml_edit::value(region.y as i64);
+            doc["region"]["width"] = toml_edit::value(region.width as i64);
+            doc["region"]["height"] = toml_edit::value(region.height as i64);
+        } else {
+            doc.remove("region");
+        }
+
+        std::fs::write(path, doc.to_string())
             .context("Failed to write config.toml")?;
+
         Ok(())
     }
 }

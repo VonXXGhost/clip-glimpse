@@ -8,28 +8,27 @@ use clap::{Parser, Subcommand};
 using QR codes displayed on screen and captured via screen capture.\n\
 \n\
 USAGE:\n\
+    clip_glimpse [COMMAND]\n\
     clip_glimpse generate    — Open GUI to type/paste text, encode as QR, cycle-display\n\
     clip_glimpse read        — Open GUI to scan QR region, decode & reassemble messages\n\
 \n\
+When no subcommand is given, the default mode is read from config.toml (field: default_mode).\n\
+\n\
 CONFIG:\n\
     config.toml in CWD controls:\n\
-      - scan_interval_ms   : Scanner polling interval (default: 200)\n\
-      - hotkey_enabled     : Enable hotkey toggle (default: true)\n\
-      - hotkey             : Hotkey string, e.g. \"Ctrl+Shift+V\" (default: \"Ctrl+Shift+V\")\n\
-      - log_enabled        : Write clip_glimpse.log (default: true)\n\
+      - default_mode        : Default mode when no subcommand (\"generate\" / \"read\")\n\
+      - scan_interval_ms    : Scanner polling interval (default: 200)\n\
+      - hotkey_enabled      : Enable hotkey toggle (default: true)\n\
+      - hotkey              : Hotkey string, e.g. \"Ctrl+Shift+V\" (default: \"Ctrl+Shift+V\")\n\
+      - log_enabled         : Write clip_glimpse.log (default: true)\n\
       - generate_preset_index : Default QR preset index in generate mode (default: 1)\n\
-      - generate_interval_ms  : Default cycle interval in generate mode (default: 500) — one of 200,300,500,800,1000\n\
+      - generate_interval_ms  : Default cycle interval in generate mode (default: 500)\n\
 \n\
 HOTKEYS:\n\
-    configurable via hotkey string in config.toml (default: Ctrl+Shift+V)\n\
-\n\
-PROTOCOL:\n\
-    Binary header 'CG' + SOS/DATA/EOS chunks with CRC32 verification.\n\
-    Max 100 chunks per message."
-)]
+    configurable via hotkey string in config.toml (default: Ctrl+Shift+V)" )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 
     /// Internal flag to avoid re-spawn loop
     #[arg(long, global = true, hide = true)]

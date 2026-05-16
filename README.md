@@ -26,6 +26,9 @@ Transfer text across air-gapped cloud desktops via QR codes on screen.
 
 ## Quick Start
 
+Double-click `clip_glimpse.exe` (requires `default_mode` in [config.toml](#configuration)),
+or specify a subcommand:
+
 ### Generate mode (run on Cloud PC)
 
 ```bash
@@ -49,36 +52,39 @@ clip_glimpse read
 3. On message completion: auto-copies to clipboard, fires a toast notification, and auto-stops scanning
 4. Received messages appear in the **History** tab — select to preview, click **Copy to Clipboard**
 
-## Protocol
+## Protocol (v2)
 
-Each QR frame carries a structured binary chunk:
+Each QR code carries a structured binary chunk with a 12-byte header:
 
 ```
-┌────────┬────────┬──────────┬─────────┬─────────┬──────────────────┐
-│  MAGIC │  TYPE  │ VERSION  │   SEQ   │  TOTAL  │    PAYLOAD       │
-│  2 B   │  1 B   │   1 B    │  2 B    │  2 B    │   (N bytes)      │
-│  "CG"  │ S/D/E  │   0x01   │ u16 BE  │ u16 BE  │   UTF-8 text     │
-└────────┴────────┴──────────┴─────────┴─────────┴──────────────────┘
+┌────────┬──────────┬─────────┬─────────┬──────────┬──────────────────┐
+│  MAGIC │ VERSION  │  FLAGS  │   SEQ   │  TOTAL   │      CRC32      │
+│  2 B   │  1 B     │  1 B    │  2 B    │  2 B     │      4 B        │
+│  "CG"  │  0x02    │bit0=lz4 │ u16 BE  │ u16 BE   │    u32 BE       │
+└────────┴──────────┴─────────┴─────────┴──────────┴──────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                       PAYLOAD (N bytes)                              │
+│              lz4-compressed chunk of the message data                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-| Type | Byte | Description |
-|------|------|-------------|
-| SOS  | `0x53` | Start of message, carries CRC32 of entire payload |
-| DATA | `0x44` | Data fragment (UTF-8 text segment) |
-| EOS  | `0x45` | End of message, carries CRC32 for verification |
-
-The reader deduplicates by `(TYPE, SEQ, TOTAL)`, reassembles in order, and verifies via CRC32 before delivery. Max 100 chunks per message.
+- All chunks are uniform — no SOS/DATA/EOS distinction
+- Every chunk carries the CRC32 of the full uncompressed text
+- The reader can start collecting **from any chunk** (cyclic consumption, O(n))
+- After collecting `total` unique chunks: concatenate → lz4 decompress → CRC32 verify → deliver
+- Max 100 chunks per message
 
 ## Presets
 
 | Preset | Version | EC Level | Module Size | Payload/Chunk | Display Size |
 |--------|---------|----------|-------------|---------------|--------------|
-| Conservative V20-Q | V20 | Q | 3 px | 419 B | ~291×291 |
-| **Default V25-M** | **V25** | **M** | **3 px** | **771 B** | **~351×351** |
-| Fast V30-M | V30 | M | 2 px | 1035 B | ~274×274 |
-| Extreme V35-L | V35 | L | 2 px | 1587 B | ~314×314 |
+| Conservative V20-Q | V20 | Q | 3 px | 415 B | ~291×291 |
+| **Default V25-M** | **V25** | **M** | **3 px** | **767 B** | **~351×351** |
+| Fast V30-M | V30 | M | 2 px | 1031 B | ~274×274 |
+| Extreme V35-L | V35 | L | 2 px | 1583 B | ~314×314 |
 
-The payload per chunk excludes the 8-byte protocol header.
+The payload per chunk excludes the 12-byte protocol header.
+All data is transparently compressed with lz4 before chunking.
 
 ## Throughput (estimate)
 
@@ -96,6 +102,7 @@ Based on 200 ms scan interval. Actual performance varies with screen capture spe
 Config file is `config.toml` in the working directory. See [config.example.toml](config.example.toml) for all options.
 
 Key settings:
+- `default_mode` — Default mode when no subcommand: `"generate"` or `"read"` (optional)
 - `scan_interval_ms` — Scanner polling interval (default: 200 ms)
 - `hotkey` — Hotkey string, e.g. `"Ctrl+Shift+V"` (case-insensitive)
 - `hotkey_enabled` — Enable hotkey toggle (default: true)
@@ -110,7 +117,7 @@ Key settings:
 - **Auto-clipboard**: Complete messages are automatically written to the Windows clipboard via `SetClipboardData(CF_UNICODETEXT)`
 - **Toast notification**: Uses `Shell_NotifyIconW` to show a system balloon notification on message completion
 - **Auto-stop**: Scanning stops automatically after a complete message is received
-- **SOS timeout**: If no EOS arrives within 30 seconds, the assembler resets and waits for a new message
+- **Assembly timeout**: If no new chunk arrives within 30 seconds, the assembler resets and waits for a new message
 - **Region reselection**: Click "Change Region" in the scanner panel to re-select the capture area without restarting
 - **History**: In-memory message history (max 100 entries), view and copy from the History tab
 - **Cycle display**: In generate mode, QR frames cycle at configurable intervals (200/300/500/800/1000 ms)

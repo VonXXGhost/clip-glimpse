@@ -1,6 +1,6 @@
 use eframe::egui;
 use qrcode::{EcLevel, Version};
-use crate::protocol::{self, encode_message, estimate_chunks, MAX_CHUNKS};
+use crate::protocol::{self, encode_message, MAX_CHUNKS};
 use crate::qr_gen::{self, QrGenParams};
 
 struct Preset {
@@ -125,17 +125,16 @@ impl GenerateApp {
         }
 
         let payload_size = self.preset().payload_size();
-        let total = estimate_chunks(self.input_text.len(), payload_size);
+        let params = self.qr_params();
+        let raw_chunks = encode_message(&self.input_text, payload_size);
 
-        if total > MAX_CHUNKS as usize {
-            self.status_message = format!("Warning: {} chunks needed, max is {}. Text too long.", total, MAX_CHUNKS);
-            log_debug!("GEN", "Rebuild: TOO LONG, {} chunks needed", total);
+        if raw_chunks.len() > MAX_CHUNKS as usize {
+            self.status_message = format!("Warning: {} chunks needed, max is {}. Text too long.", raw_chunks.len(), MAX_CHUNKS);
+            log_debug!("GEN", "Rebuild: TOO LONG, {} chunks needed", raw_chunks.len());
             return;
         }
 
-        let raw_chunks = encode_message(&self.input_text, payload_size);
-        let params = self.qr_params();
-
+        let total = raw_chunks.len();
         let total_size = self.input_text.len();
         let estimated_time = total as f64 * self.interval_ms() as f64 / 1000.0;
 
@@ -146,15 +145,6 @@ impl GenerateApp {
 
         log_debug!("GEN", "Rebuild: {} chunks, {} bytes, interval={}ms",
             total, total_size, self.interval_ms());
-
-        let chunk_types: Vec<String> = raw_chunks.iter().map(|c| {
-            let t = if c.chunk_type == crate::protocol::TYPE_SOS { "SOS" }
-                else if c.chunk_type == crate::protocol::TYPE_DATA { "DATA" }
-                else if c.chunk_type == crate::protocol::TYPE_EOS { "EOS" }
-                else { "???" };
-            format!("{}[{}]", t, c.seq)
-        }).collect();
-        log_debug!("GEN", "Chunk sequence: {}", chunk_types.join(" "));
 
         self.chunks = raw_chunks.iter().map(|c| {
             let data = c.encode();
