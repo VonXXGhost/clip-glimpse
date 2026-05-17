@@ -127,6 +127,11 @@ impl ReadApp {
 
         ui.add_space(4.0);
 
+        let mode_label = if self.config.color_mode { "Color (3x)" } else { "B&W" };
+        ui.label(format!("QR mode: {}", mode_label));
+
+        ui.add_space(4.0);
+
         if ui.button("Change Region").clicked() {
             self.needs_reselect.store(true, Ordering::SeqCst);
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);

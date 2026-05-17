@@ -42,9 +42,14 @@ log_enabled = false
 # 1 = Default V25-M（推荐）
 # 2 = Fast V30-M
 # 3 = Extreme V35-L
-generate_preset_index = 2
+generate_preset_index = 1
 
 # === 生成模式刷新间隔（毫秒，默认 500）===
 # 生成模式下 QR 码轮播切换的时间间隔。
 # 可选值：200、300、500、800、1000。其他值会自动就近匹配。
 generate_interval_ms = 200
+
+# === 彩色 QR 模式（默认 true）===
+# 启用后：每帧用 RGB 三通道承载 3 个独立 QR 码，带宽提升约 3 倍。
+# 颜色使用纯 R/G/B 极值（0 或 255），对屏幕压缩和拍摄鲁棒性高。
+color_mode = true

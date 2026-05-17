@@ -1,7 +1,9 @@
 use eframe::egui;
 use qrcode::{EcLevel, Version};
 use crate::protocol::{self, encode_message, MAX_CHUNKS};
-use crate::qr_gen::{self, QrGenParams};
+use crate::qr_gen::{self, QrGenParams, generate_color_qr};
+
+const MAX_CYCLES: u64 = 100;
 
 struct Preset {
     name: &'static str,
@@ -36,6 +38,11 @@ impl DisplayChunk {
         Self { qr_image }
     }
 
+    fn new_color(group: Vec<Vec<u8>>, params: &QrGenParams) -> Self {
+        let qr_image = generate_color_qr(&group, params);
+        Self { qr_image }
+    }
+
     fn texture(&self, ctx: &egui::Context, label: &str) -> Option<egui::TextureHandle> {
         let img = self.qr_image.as_ref()?;
         let color_image = qr_gen::qr_to_egui_color_image(img);
@@ -48,7 +55,7 @@ pub struct GenerateApp {
     preset_index: usize,
     interval_index: usize,
     is_running: bool,
-    chunks: Vec<DisplayChunk>,
+    frames: Vec<DisplayChunk>,
     current_index: usize,
     last_cycle: std::time::Instant,
     qr_texture: Option<egui::TextureHandle>,
@@ -57,6 +64,8 @@ pub struct GenerateApp {
     config: crate::read::Config,
     last_pos_check: std::time::Instant,
     last_saved_pos: Option<(i32, i32)>,
+    color_mode: bool,
+    raw_chunk_count: usize,
 }
 
 impl GenerateApp {
@@ -75,7 +84,7 @@ impl GenerateApp {
             preset_index: config.generate_preset_index.min(PRESETS.len().saturating_sub(1)),
             interval_index,
             is_running: false,
-            chunks: Vec::new(),
+            frames: Vec::new(),
             current_index: 0,
             last_cycle: std::time::Instant::now(),
             qr_texture: None,
@@ -84,24 +93,40 @@ impl GenerateApp {
             config: config.clone(),
             last_pos_check: std::time::Instant::now(),
             last_saved_pos: None,
+            color_mode: config.color_mode,
+            raw_chunk_count: 0,
         }
     }
 }
 
 impl GenerateApp {
     fn start_cycling(&mut self, ctx: &egui::Context) {
-        if self.chunks.is_empty() {
-            self.is_running = false;
+        if self.frames.len() <= 1 {
             return;
         }
         self.is_running = true;
         self.current_index = 0;
         self.cycle_count = 0;
         self.last_cycle = std::time::Instant::now();
+        self.status_message.clear();
         self.show_qr_preview(ctx);
-        log_debug!("GEN", "Start cycling: {} chunks, {}ms interval",
-            self.chunks.len(), self.interval_ms());
+        log_debug!("GEN", "Start cycling: {} frames, {}ms interval",
+            self.frames.len(), self.interval_ms());
         ctx.request_repaint();
+    }
+
+    fn sync_display_state(&mut self, ctx: &egui::Context) {
+        if self.frames.is_empty() {
+            self.is_running = false;
+            self.qr_texture = None;
+        } else if self.frames.len() == 1 {
+            self.is_running = false;
+            self.current_index = 0;
+            self.cycle_count = 0;
+            self.show_qr_preview(ctx);
+        } else {
+            self.start_cycling(ctx);
+        }
     }
 }
 
@@ -123,10 +148,11 @@ impl GenerateApp {
         }
     }
 
-    fn rebuild_chunks(&mut self) {
-        self.chunks.clear();
+    fn rebuild_frames(&mut self) {
+        self.frames.clear();
         if self.input_text.is_empty() {
-            log_debug!("GEN", "Rebuild: empty text, no chunks");
+            log_debug!("GEN", "Rebuild: empty text, no frames");
+            self.raw_chunk_count = 0;
             return;
         }
 
@@ -137,31 +163,48 @@ impl GenerateApp {
         if raw_chunks.len() > MAX_CHUNKS as usize {
             self.status_message = format!("Warning: {} chunks needed, max is {}. Text too long.", raw_chunks.len(), MAX_CHUNKS);
             log_debug!("GEN", "Rebuild: TOO LONG, {} chunks needed", raw_chunks.len());
+            self.raw_chunk_count = 0;
             return;
         }
 
-        let total = raw_chunks.len();
+        self.raw_chunk_count = raw_chunks.len();
         let total_size = self.input_text.len();
-        let estimated_time = total as f64 * self.interval_ms() as f64 / 1000.0;
+        let encoded: Vec<Vec<u8>> = raw_chunks.iter().map(|c| c.encode()).collect();
 
-        self.status_message = format!(
-            "{} chunks, {} bytes, ~{:.1}s per cycle",
-            total, total_size, estimated_time
-        );
+        if self.color_mode {
+            let frames_count = (encoded.len() + 2) / 3;
+            let estimated_time = frames_count as f64 * self.interval_ms() as f64 / 1000.0;
+            self.status_message = format!(
+                "{} chunks ({} frames), {} bytes, ~{:.1}s per cycle",
+                encoded.len(), frames_count, total_size, estimated_time
+            );
 
-        log_debug!("GEN", "Rebuild: {} chunks, {} bytes, interval={}ms",
-            total, total_size, self.interval_ms());
+            for group in encoded.chunks(3) {
+                self.frames.push(DisplayChunk::new_color(group.to_vec(), &params));
+            }
 
-        self.chunks = raw_chunks.iter().map(|c| {
-            let data = c.encode();
-            DisplayChunk::new(data, &params)
-        }).collect();
+            log_debug!("GEN", "Rebuild color: {} chunks, {} frames, {} bytes, interval={}ms",
+                encoded.len(), frames_count, total_size, self.interval_ms());
+        } else {
+            let estimated_time = encoded.len() as f64 * self.interval_ms() as f64 / 1000.0;
+            self.status_message = format!(
+                "{} chunks, {} bytes, ~{:.1}s per cycle",
+                encoded.len(), total_size, estimated_time
+            );
+
+            for data in &encoded {
+                self.frames.push(DisplayChunk::new(data.clone(), &params));
+            }
+
+            log_debug!("GEN", "Rebuild: {} chunks, {} bytes, interval={}ms",
+                encoded.len(), total_size, self.interval_ms());
+        }
     }
 
     fn show_qr_preview(&mut self, ctx: &egui::Context) {
-        if !self.chunks.is_empty() && self.current_index < self.chunks.len() {
-            let chunk = &self.chunks[self.current_index];
-            self.qr_texture = chunk.texture(ctx, &format!("qr_{}", self.current_index));
+        if !self.frames.is_empty() && self.current_index < self.frames.len() {
+            let frame = &self.frames[self.current_index];
+            self.qr_texture = frame.texture(ctx, &format!("qr_{}", self.current_index));
         }
     }
 }
@@ -188,8 +231,8 @@ impl eframe::App for GenerateApp {
                     );
                     if response.changed() {
                         log_debug!("GEN", "Text changed, len={}", self_.input_text.len());
-                        self_.rebuild_chunks();
-                        self_.start_cycling(ctx);
+                        self_.rebuild_frames();
+                        self_.sync_display_state(ctx);
                     }
                 });
 
@@ -205,7 +248,7 @@ impl eframe::App for GenerateApp {
                     let display_size = egui::vec2(ui.available_width().min(400.0), 320.0);
                     let (rect, _) = ui.allocate_exact_size(display_size, egui::Sense::hover());
 
-                    if !self_.chunks.is_empty() {
+                    if !self_.frames.is_empty() {
                         if let Some(tex) = &self_.qr_texture {
                             let size = tex.size_vec2();
                             let max_w = rect.width() - 16.0;
@@ -219,12 +262,21 @@ impl eframe::App for GenerateApp {
                         }
 
                         if self_.is_running {
-                            ui.label(format!(
-                                "Chunk {}/{} (cycle #{})",
-                                self_.current_index + 1,
-                                self_.chunks.len(),
-                                self_.cycle_count
-                            ));
+                            let label = if self_.color_mode {
+                                format!("Frame {}/{} ({} chunks, cycle #{})",
+                                    self_.current_index + 1,
+                                    self_.frames.len(),
+                                    self_.raw_chunk_count,
+                                    self_.cycle_count
+                                )
+                            } else {
+                                format!("Chunk {}/{} (cycle #{})",
+                                    self_.current_index + 1,
+                                    self_.frames.len(),
+                                    self_.cycle_count
+                                )
+                            };
+                            ui.label(label);
                         }
                     } else {
                         let painter = ui.painter();
@@ -251,12 +303,8 @@ impl eframe::App for GenerateApp {
                             if selected.clicked() {
                                 log_debug!("GEN", "Preset changed to: {}", preset.name);
                                 self_.preset_index = i;
-                                self_.rebuild_chunks();
-                                if self_.is_running {
-                                    self_.start_cycling(ctx);
-                                } else {
-                                    self_.show_qr_preview(ctx);
-                                }
+                                self_.rebuild_frames();
+                                self_.sync_display_state(ctx);
                             }
                         }
                     });
@@ -272,11 +320,20 @@ impl eframe::App for GenerateApp {
                             }
                         }
                     });
+
+                if ui.checkbox(&mut self_.color_mode, "Color (3x)").changed() {
+                    self_.config.color_mode = self_.color_mode;
+                    let _ = self_.config.save();
+                    if !self_.input_text.is_empty() {
+                        self_.rebuild_frames();
+                        self_.sync_display_state(ctx);
+                    }
+                }
             });
 
             ui.add_space(8.0);
 
-            if !self_.chunks.is_empty() {
+            if self_.frames.len() > 1 {
                 let btn_text = if self_.is_running { "\u{23F8} Pause" } else { "\u{25B6} Resume" };
                 if ui.button(btn_text).clicked() {
                     if self_.is_running {
@@ -300,16 +357,21 @@ impl eframe::App for GenerateApp {
             }
         });
 
-        if self_.is_running && !self_.chunks.is_empty() {
+        if self_.is_running && !self_.frames.is_empty() {
             let elapsed = self_.last_cycle.elapsed();
             if elapsed.as_millis() >= self_.interval_ms() as u128 {
-                self_.current_index = (self_.current_index + 1) % self_.chunks.len();
+                self_.current_index = (self_.current_index + 1) % self_.frames.len();
                 if self_.current_index == 0 {
                     self_.cycle_count += 1;
+                    if self_.cycle_count >= MAX_CYCLES {
+                        log_debug!("GEN", "Auto-pause after {} cycles", MAX_CYCLES);
+                        self_.is_running = false;
+                        self_.status_message = format!("Paused after {} cycles (max limit reached)", MAX_CYCLES);
+                    }
                 }
                 self_.last_cycle = std::time::Instant::now();
-                log_debug!("GEN", "Show chunk {}/{} (cycle #{})",
-                    self_.current_index + 1, self_.chunks.len(), self_.cycle_count);
+                log_debug!("GEN", "Show frame {}/{} (cycle #{})",
+                    self_.current_index + 1, self_.frames.len(), self_.cycle_count);
                 self_.show_qr_preview(ctx);
             }
             ctx.request_repaint();

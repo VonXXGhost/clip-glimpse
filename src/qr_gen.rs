@@ -52,6 +52,70 @@ pub fn generate_qr(data: &[u8], params: &QrGenParams) -> Option<RgbImage> {
     Some(full_img)
 }
 
+pub fn generate_color_qr(group: &[Vec<u8>], params: &QrGenParams) -> Option<RgbImage> {
+    if group.is_empty() {
+        return None;
+    }
+
+    let count = group.len().min(3);
+    let mut codes: [Option<QrCode>; 3] = [None, None, None];
+    let mut modules = 0usize;
+
+    for i in 0..count {
+        match QrCode::with_version(&group[i], params.version, params.ec_level) {
+            Ok(code) => {
+                if modules == 0 {
+                    modules = code.width();
+                }
+                codes[i] = Some(code);
+            }
+            Err(e) => {
+                log_debug!("GEN_COLOR", "Channel {} QrCode::with_version failed: {:?}", i, e);
+            }
+        }
+    }
+
+    if codes.iter().all(|c| c.is_none()) {
+        return None;
+    }
+    if modules == 0 {
+        return None;
+    }
+
+    let border = params.module_size_px as usize;
+    let full_size = modules * params.module_size_px as usize + border * 2;
+    let mut full_img = RgbImage::new(full_size as u32, full_size as u32);
+
+    for pixel in full_img.pixels_mut() {
+        *pixel = Rgb([255, 255, 255]);
+    }
+
+    for y in 0..modules {
+        for x in 0..modules {
+            let mut channels = [255u8; 3];
+            for (i, code) in codes.iter().enumerate() {
+                if let Some(ref code) = code {
+                    if code[(x, y)] == Color::Dark {
+                        channels[i] = 0;
+                    }
+                }
+            }
+            let color = Rgb(channels);
+            for dy in 0..params.module_size_px {
+                for dx in 0..params.module_size_px {
+                    let px = (x as u32 * params.module_size_px + dx) as usize + border;
+                    let py = (y as u32 * params.module_size_px + dy) as usize + border;
+                    if px < full_size && py < full_size {
+                        full_img.put_pixel(px as u32, py as u32, color);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(full_img)
+}
+
 pub fn qr_to_egui_color_image(img: &RgbImage) -> egui::ColorImage {
     let size = [img.width() as usize, img.height() as usize];
     let pixels = img
@@ -84,5 +148,37 @@ mod tests {
         };
         let img = generate_qr(b"hello qr", &params);
         assert!(img.is_some());
+    }
+
+    #[test]
+    fn test_generate_color_qr_single() {
+        let params = QrGenParams::default();
+        let img = generate_color_qr(&[b"chunk 1 data".to_vec()], &params);
+        assert!(img.is_some());
+    }
+
+    #[test]
+    fn test_generate_color_qr_three() {
+        let params = QrGenParams::default();
+        let img = generate_color_qr(
+            &[b"red channel".to_vec(), b"green channel".to_vec(), b"blue channel".to_vec()],
+            &params,
+        );
+        assert!(img.is_some());
+    }
+
+    #[test]
+    fn test_generate_color_qr_empty() {
+        let params = QrGenParams::default();
+        assert!(generate_color_qr(&[], &params).is_none());
+    }
+
+    #[test]
+    fn test_color_qr_same_size_as_bw() {
+        let params = QrGenParams::default();
+        let bw = generate_qr(b"test", &params).unwrap();
+        let color = generate_color_qr(&[b"test".to_vec()], &params).unwrap();
+        assert_eq!(bw.width(), color.width());
+        assert_eq!(bw.height(), color.height());
     }
 }

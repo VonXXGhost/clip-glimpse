@@ -52,6 +52,7 @@ pub struct Config {
     pub default_mode: Option<String>,
     pub generate_window_pos: Option<WindowPosition>,
     pub read_window_pos: Option<WindowPosition>,
+    pub color_mode: bool,
 }
 
 impl Default for Config {
@@ -67,6 +68,7 @@ impl Default for Config {
             default_mode: None,
             generate_window_pos: None,
             read_window_pos: None,
+            color_mode: false,
         }
     }
 }
@@ -169,6 +171,7 @@ pub fn run() -> anyhow::Result<()> {
             history.clone(),
             scan_state.clone(),
             config.scan_interval_ms,
+            config.color_mode,
         );
         let stats = scanner.stats();
 

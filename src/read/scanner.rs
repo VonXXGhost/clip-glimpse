@@ -72,6 +72,7 @@ pub struct Scanner {
     stats: Arc<Mutex<ScanStats>>,
     running: Arc<AtomicBool>,
     thread_handle: Option<thread::JoinHandle<()>>,
+    color_mode: bool,
 }
 
 unsafe impl Send for Scanner {}
@@ -83,6 +84,7 @@ impl Scanner {
         history: Arc<Mutex<History>>,
         scan_state: Arc<Mutex<ScanState>>,
         scan_interval_ms: u64,
+        color_mode: bool,
     ) -> Self {
         Self {
             region,
@@ -92,6 +94,7 @@ impl Scanner {
             stats: Arc::new(Mutex::new(ScanStats::default())),
             running: Arc::new(AtomicBool::new(false)),
             thread_handle: None,
+            color_mode,
         }
     }
 
@@ -115,6 +118,7 @@ impl Scanner {
         let scan_state = self.scan_state.clone();
         let stats = self.stats.clone();
         let running = self.running.clone();
+        let color_mode = self.color_mode;
 
         let handle = thread::Builder::new()
             .name("scanner".into())
@@ -163,77 +167,101 @@ impl Scanner {
                         s.frames_captured += 1;
                     }
 
-                    let gray = qr_read::convert_bgra_to_gray(&pixels);
+                    macro_rules! process_chunk {
+                        ($decoded:expr, $label:expr) => {
+                            let chunk = match Chunk::decode(&$decoded) {
+                                Some(c) => c,
+                                None => {
+                                    log_debug!("SCAN", "Chunk::decode failed (bad magic/version, ch={}), raw_len={}", $label, $decoded.len());
+                                    continue;
+                                },
+                            };
 
-                    let decoded = match qr_read::decode_qr(&gray, region.width, region.height) {
-                        Ok(d) => d,
-                        Err(_) => {
-                            log_debug!("SCAN", "QR decode failed");
-                            continue;
-                        },
-                    };
+                            log_debug!("SCAN", "Chunk seq={} total={} flags={:#04x} payload_len={} (ch={})",
+                                chunk.seq, chunk.total, chunk.flags, chunk.payload.len(), $label);
 
-                    {
-                        let mut s = stats.lock().unwrap();
-                        s.frames_decoded += 1;
+                            last_chunk_time = Some(Instant::now());
+
+                            {
+                                let mut s = stats.lock().unwrap();
+                                s.chunks_received += 1;
+                                s.current_total_chunks = chunk.total;
+                                s.current_message_active = true;
+                            }
+
+                            if let Some(message) = assembler.feed(&chunk) {
+                                log_debug!("SCAN", "Message completed! len={}", message.len());
+
+                                if let Err(e) = crate::clipboard::set_text(&message) {
+                                    log_debug!("CLIP", "Failed to set clipboard: {}", e);
+                                } else {
+                                    log_debug!("CLIP", "Copied message to clipboard ({} bytes)", message.len());
+                                }
+
+                                crate::notify::show("ClipGlimpse", "Message received and copied to clipboard");
+
+                                let mut h = history.lock().unwrap();
+                                h.add(message);
+                                drop(h);
+
+                                last_chunk_time = None;
+
+                                let mut s = stats.lock().unwrap();
+                                s.messages_completed += 1;
+                                s.last_message_time = Some(
+                                    chrono::Local::now().format("%H:%M:%S").to_string()
+                                );
+                                s.current_message_active = false;
+                                s.current_received_data_chunks = 0;
+                                s.current_total_chunks = 0;
+                                drop(s);
+
+                                *scan_state.lock().unwrap() = ScanState::Idle;
+                                log_debug!("SCAN", "Scanning auto-stopped after message completion");
+                            } else {
+                                log_debug!("SCAN", "feed returned None (duplicate or incomplete)");
+                                {
+                                    let mut s = stats.lock().unwrap();
+                                    s.current_received_data_chunks = assembler.filled_count();
+                                    s.current_message_active = assembler.is_active();
+                                }
+                            }
+                        };
                     }
 
-                    let chunk = match Chunk::decode(&decoded) {
-                        Some(c) => c,
-                        None => {
-                            log_debug!("SCAN", "Chunk::decode failed (bad magic/version), raw_len={}", decoded.len());
-                            continue;
-                        },
-                    };
-
-                    log_debug!("SCAN", "Chunk seq={} total={} flags={:#04x} payload_len={}",
-                        chunk.seq, chunk.total, chunk.flags, chunk.payload.len());
-
-                    last_chunk_time = Some(Instant::now());
-
-                    {
-                        let mut s = stats.lock().unwrap();
-                        s.chunks_received += 1;
-                        s.current_total_chunks = chunk.total;
-                        s.current_message_active = true;
-                    }
-
-                    if let Some(message) = assembler.feed(&chunk) {
-                        log_debug!("SCAN", "Message completed! len={}", message.len());
-
-                        if let Err(e) = crate::clipboard::set_text(&message) {
-                            log_debug!("CLIP", "Failed to set clipboard: {}", e);
-                        } else {
-                            log_debug!("CLIP", "Copied message to clipboard ({} bytes)", message.len());
+                    if color_mode {
+                        let channels = [
+                            (qr_read::Channel::R, "R"),
+                            (qr_read::Channel::G, "G"),
+                            (qr_read::Channel::B, "B"),
+                        ];
+                        for &(ch, name) in &channels {
+                            let ch_data = qr_read::extract_channel_from_bgra(&pixels, ch);
+                            let ch_data = qr_read::stretch_contrast(&ch_data);
+                            let decoded = match qr_read::decode_qr(&ch_data, region.width, region.height) {
+                                Ok(d) => d,
+                                Err(_) => continue,
+                            };
+                            {
+                                let mut s = stats.lock().unwrap();
+                                s.frames_decoded += 1;
+                            }
+                            process_chunk!(decoded, name);
                         }
-
-                        crate::notify::show("ClipGlimpse", "Message received and copied to clipboard");
-
-                        let mut h = history.lock().unwrap();
-                        h.add(message);
-                        drop(h);
-
-                        last_chunk_time = None;
-
-                        let mut s = stats.lock().unwrap();
-                        s.messages_completed += 1;
-                        s.last_message_time = Some(
-                            chrono::Local::now().format("%H:%M:%S").to_string()
-                        );
-                        s.current_message_active = false;
-                        s.current_received_data_chunks = 0;
-                        s.current_total_chunks = 0;
-                        drop(s);
-
-                        *scan_state.lock().unwrap() = ScanState::Idle;
-                        log_debug!("SCAN", "Scanning auto-stopped after message completion");
                     } else {
-                        log_debug!("SCAN", "feed returned None (duplicate or incomplete)");
+                        let gray = qr_read::convert_bgra_to_gray(&pixels);
+                        let decoded = match qr_read::decode_qr(&gray, region.width, region.height) {
+                            Ok(d) => d,
+                            Err(_) => {
+                                log_debug!("SCAN", "QR decode failed");
+                                continue;
+                            },
+                        };
                         {
                             let mut s = stats.lock().unwrap();
-                            s.current_received_data_chunks = assembler.filled_count();
-                            s.current_message_active = assembler.is_active();
+                            s.frames_decoded += 1;
                         }
+                        process_chunk!(decoded, "B&W");
                     }
                 }
             });

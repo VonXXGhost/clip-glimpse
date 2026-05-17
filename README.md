@@ -86,7 +86,22 @@ Each QR code carries a structured binary chunk with a 12-byte header:
 The payload per chunk excludes the 12-byte protocol header.
 All data is transparently compressed with lz4 before chunking.
 
-## Throughput (estimate)
+## Color QR Mode
+
+Enable 3× bandwidth by compositing independent R/G/B QR codes into a single color image:
+
+- **How it works**: Each display frame carries **3 B&W QR codes** — one per RGB channel. The reader extracts each channel independently and decodes all three.
+- **Color scheme**: Only extreme values (0 or 255) per channel → 8 distinct colors at RGB cube corners. Maximally separated, resistant to compression and capture artifacts.
+- **Generation**: `generate_color_qr()` calls `QrCode::with_version` for each of 1–3 chunks, composites channel values (Dark→0, Light→255).
+- **Reading**: `extract_channel_from_bgra()` pulls R, G, or B from BGRA capture; each channel undergoes **contrast stretching** (`stretch_contrast`) to recover full dynamic range before `rxing` decoding.
+- **Backwards compatible**: B&W mode is default. Toggle via **Color (3x)** checkbox in Generate UI or `color_mode = true` in config.
+
+| Mode | Payload/Frame | V25-M Display Size |
+|------|---------------|-------------------|
+| B&W | 767 B | ~351×351 |
+| **Color** | **2301 B** (3 × 767) | **~351×351** (same) |
+
+## Throughput (estimate, B&W mode)
 
 | Text Size | Default V25-M | Fast V30-M | Extreme V35-L |
 |-----------|---------------|------------|---------------|
@@ -94,6 +109,8 @@ All data is transparently compressed with lz4 before chunking.
 | 10 KB | ~4.2 s | ~3.0 s | ~2.1 s |
 | 100 KB | ~40 s | ~30 s | ~20 s |
 | 1 MB | ~6 min 44 s | ~5 min 2 s | ~3 min 17 s |
+
+With **Color mode** (V25-M), throughput is ~3× faster: same data takes ~⅓ the time.
 
 Based on 200 ms scan interval. Actual performance varies with screen capture speed and QR code quality.
 
@@ -109,6 +126,7 @@ Key settings:
 - `log_enabled` — Write `clip_glimpse.log` (default: true)
 - `generate_preset_index` — Default QR preset (default: 1 = V25-M)
 - `generate_interval_ms` — Default cycle interval in generate mode (default: 500)
+- `color_mode` — Enable 3× bandwidth color QR mode (default: false)
 
 ## Features
 
@@ -121,6 +139,7 @@ Key settings:
 - **Region reselection**: Click "Change Region" in the scanner panel to re-select the capture area without restarting
 - **History**: In-memory message history (max 100 entries), view and copy from the History tab
 - **Cycle display**: In generate mode, QR frames cycle at configurable intervals (200/300/500/800/1000 ms)
+- **Color QR mode**: 3× bandwidth via RGB-channel multiplexing — toggleable in Generate UI or config
 - **CJK fonts**: Loads SimHei, SimSun, or Microsoft YaHei for Chinese text rendering
 
 ## Development

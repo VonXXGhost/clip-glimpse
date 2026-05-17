@@ -2,6 +2,8 @@ pub const MAGIC: [u8; 2] = [0x43, 0x47];
 pub const VERSION: u8 = 0x02;
 
 pub const FLAG_COMPRESSED: u8 = 0x01;
+#[allow(dead_code)]
+pub const FLAG_COLOR: u8 = 0x02;
 
 pub const HEADER_SIZE: usize = 12;
 
